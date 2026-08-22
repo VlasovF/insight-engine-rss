@@ -1,0 +1,49 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend/Dockerfile
+    container_name: ${PROJECT_PREFIX:-ie}-backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    # volumes:
+    #   - ./backend:/app
+    #   - ./app.db:/app/app.db
+    #   - ./chroma_data:/app/chroma_data
+    #   - ./logs:/app/logs
+    env_file:
+      - .env
+    environment:
+      - OLLAMA_HOST=${OLLAMA_HOST:-ollama}
+      - OLLAMA_PORT=${OLLAMA_PORT:-11434}
+      - SQLITE_PATH=${SQLITE_PATH:-./app.db}
+      - CHROMA_PATH=${CHROMA_PATH:-./chroma_data}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - LOG_FILE=${LOG_FILE:-./logs/pipeline.log}
+    networks:
+      - default
+      # - ollama
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+    container_name: ${PROJECT_PREFIX:-ie}-frontend
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+    # volumes:
+    #   - ./frontend:/app
+    #   - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:${BACKEND_PORT:-8000}
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  default:
+    name: ${PROJECT_PREFIX:-ie}-network
+  # ollama:
+  #   external:
+  #     name: ${OLLAMA_NETWORK:-ollama-network}
