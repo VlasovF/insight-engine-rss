@@ -1,7 +1,23 @@
 """FastAPI application entry point."""
 
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from .models import Base
+
+# Database setup
+DB_PATH = os.getenv("SQLITE_PATH", "./app.db")
+engine = create_engine(
+    f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+# Create tables
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="Insight Engine API",
@@ -22,3 +38,9 @@ app.add_middleware(
 async def health_check() -> dict:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+@app.on_event("shutdown")
+def shutdown_event() -> None:
+    """Close database connections on shutdown."""
+    engine.dispose()

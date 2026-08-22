@@ -6,9 +6,9 @@ services:
     container_name: ${PROJECT_PREFIX:-ie}-backend
     ports:
       - "${BACKEND_PORT:-8000}:8000"
-    # volumes:
+    volumes:
     #   - ./backend:/app
-    #   - ./app.db:/app/app.db
+      - ./app.db:/app/app.db
     #   - ./chroma_data:/app/chroma_data
     #   - ./logs:/app/logs
     env_file:
