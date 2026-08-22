@@ -1,0 +1,39 @@
+repos:
+  - repo: local
+    hooks:
+      # Python hooks
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check
+        language: system
+        types: [python]
+        args: [--fix]
+
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format
+        language: system
+        types: [python]
+
+      - id: mypy
+        name: mypy
+        entry: mypy
+        language: system
+        types: [python]
+        args: [--ignore-missing-imports]
+        pass_filenames: true
+
+      # Frontend hooks
+      - id: eslint
+        name: eslint
+        entry: bash -c 'cd frontend && npm run lint'
+        language: system
+        files: \.(js|jsx|ts|tsx)$
+        pass_filenames: false
+
+      - id: prettier
+        name: prettier
+        entry: bash -c 'cd frontend && npm run format'
+        language: system
+        files: \.(js|jsx|ts|tsx|json|css|md)$
+        pass_filenames: false

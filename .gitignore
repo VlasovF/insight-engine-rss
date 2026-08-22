@@ -256,3 +256,6 @@ pnpm-lock.yaml
 # Cache
 .eslintcache
 .stylelintcache
+
+# OS
+.DS_Store
