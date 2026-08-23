@@ -8,6 +8,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from .models import Base
+from .uow import UnitOfWork
 
 # Database setup
 DB_PATH = os.getenv("SQLITE_PATH", "./app.db")
@@ -32,6 +33,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def get_uow() -> UnitOfWork:
+    """Dependency injection for Unit of Work."""
+    return UnitOfWork(SessionLocal)
 
 
 @app.get("/health")
