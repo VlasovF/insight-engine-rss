@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api import feeds_router
+from .api import events_router, feeds_router
 from .database import engine
 from .models import Base
 
@@ -39,6 +39,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(feeds_router)
+app.include_router(events_router)
 
 
 @app.get("/health")

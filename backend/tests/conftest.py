@@ -6,9 +6,12 @@ from pathlib import Path
 from typing import Generator
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.dependencies import get_uow
+from app.main import app
 from app.models import Base
 from app.uow import UnitOfWork
 
@@ -47,6 +50,25 @@ def uow(db_session: Session) -> Generator[UnitOfWork, None, None]:
     uow = UnitOfWork(TestSessionFactory())
     with uow.begin() as transaction:
         yield transaction
+
+
+@pytest.fixture(scope="function")
+def client(db_session: Session) -> Generator[TestClient, None, None]:
+    """Create a TestClient with test database dependency override."""
+
+    def override_get_uow():
+        class TestSessionFactory:
+            def __call__(self):
+                return db_session
+
+        return UnitOfWork(TestSessionFactory())
+
+    app.dependency_overrides[get_uow] = override_get_uow
+
+    with TestClient(app) as test_client:
+        yield test_client
+
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture(scope="function")
