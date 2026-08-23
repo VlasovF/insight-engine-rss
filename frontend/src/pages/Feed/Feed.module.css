@@ -1,0 +1,19 @@
+.feed {
+  background-color: #16213e;
+  border-radius: 12px;
+  padding: 2rem;
+  border: 1px solid #2a3a5e;
+}
+
+.placeholder {
+  text-align: center;
+  padding: 3rem 0;
+  color: #8a9bb5;
+  font-size: 1.2rem;
+}
+
+.hint {
+  font-size: 0.95rem;
+  color: #5a6b85;
+  margin-top: 0.5rem;
+}
