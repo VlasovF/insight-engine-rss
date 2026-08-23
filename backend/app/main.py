@@ -1,22 +1,13 @@
 """FastAPI application entry point."""
 
-import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
+from .api import feeds_router
+from .database import engine
 from .models import Base
-from .uow import UnitOfWork
-
-# Database setup
-DB_PATH = os.getenv("SQLITE_PATH", "./app.db")
-engine = create_engine(
-    f"sqlite:///{DB_PATH}", connect_args={"check_same_thread": False}
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -46,10 +37,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
-def get_uow() -> UnitOfWork:
-    """Dependency injection for Unit of Work."""
-    return UnitOfWork(SessionLocal)
+# Include routers
+app.include_router(feeds_router)
 
 
 @app.get("/health")

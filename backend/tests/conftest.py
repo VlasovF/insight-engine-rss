@@ -16,17 +16,14 @@ from app.uow import UnitOfWork
 @pytest.fixture(scope="function")
 def db_session() -> Generator[Session, None, None]:
     """Create a temporary database session for testing."""
-    # Create temporary database file
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
 
-    # Create engine
     engine = create_engine(
         f"sqlite:///{path}", connect_args={"check_same_thread": False}
     )
     Base.metadata.create_all(bind=engine)
 
-    # Create session
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)  # noqa N806
     session = SessionLocal()
 
@@ -35,7 +32,6 @@ def db_session() -> Generator[Session, None, None]:
     finally:
         session.close()
         engine.dispose()
-        # Clean up temporary file
         if Path(path).exists():
             Path(path).unlink()
 
@@ -51,3 +47,30 @@ def uow(db_session: Session) -> Generator[UnitOfWork, None, None]:
     uow = UnitOfWork(TestSessionFactory())
     with uow.begin() as transaction:
         yield transaction
+
+
+@pytest.fixture(scope="function")
+def sample_feed_xml():
+    """Sample RSS feed XML for testing."""
+    return """
+    <?xml version="1.0" encoding="UTF-8"?>
+    <rss version="2.0">
+      <channel>
+        <title>Test Feed</title>
+        <link>https://test.com</link>
+        <description>Test RSS Feed</description>
+        <item>
+          <title>News Item 1</title>
+          <link>https://test.com/1</link>
+          <description>Description 1</description>
+          <pubDate>Mon, 01 Jan 2024 12:00:00 +0000</pubDate>
+        </item>
+        <item>
+          <title>News Item 2</title>
+          <link>https://test.com/2</link>
+          <description>Description 2</description>
+          <pubDate>Mon, 02 Jan 2024 12:00:00 +0000</pubDate>
+        </item>
+      </channel>
+    </rss>
+    """
