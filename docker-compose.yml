@@ -10,7 +10,7 @@ services:
     #   - ./backend:/app
       - ./app.db:/app/app.db
     #   - ./chroma_data:/app/chroma_data
-    #   - ./logs:/app/logs
+      - ./logs:/app/logs
     env_file:
       - .env
     environment:

@@ -8,8 +8,10 @@ from pydantic import BaseModel
 from ..dependencies import get_uow
 from ..services import RSSParserService
 from ..uow import UnitOfWork
+from ..utils import get_logger
 
 router = APIRouter(prefix="/api/feeds", tags=["feeds"])
+logger = get_logger(__name__)
 
 
 class FeedFetchRequest(BaseModel):
@@ -43,11 +45,25 @@ async def fetch_feeds(
 
     """
     if not request.feed_urls:
+        logger.warning("feed_fetch_empty_request")
         raise HTTPException(status_code=400, detail="feed_urls cannot be empty")
+
+    logger.info(
+        "feed_fetch_started",
+        url_count=len(request.feed_urls),
+        urls=request.feed_urls,
+    )
 
     with uow.begin():
         parser = RSSParserService(uow.events)
         result = parser.fetch_feeds(request.feed_urls)
+
+    logger.info(
+        "feed_fetch_completed",
+        total_fetched=result["total_fetched"],
+        total_new=result["total_new"],
+        error_count=len(result["errors"]),
+    )
 
     return FeedFetchResponse(
         count=result["total_fetched"],

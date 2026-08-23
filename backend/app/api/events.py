@@ -8,8 +8,10 @@ from pydantic import BaseModel, ConfigDict
 
 from ..dependencies import get_uow
 from ..uow import UnitOfWork
+from ..utils import get_logger
 
 router = APIRouter(prefix="/api/events", tags=["events"])
+logger = get_logger(__name__)
 
 
 class EventResponse(BaseModel):
@@ -69,6 +71,14 @@ async def get_events(
         List of events matching filters.
 
     """
+    logger.info(
+        "events_fetch_request",
+        status=status,
+        is_duplicate=is_duplicate,
+        limit=limit,
+        offset=offset,
+    )
+
     with uow.begin():
         # Build query
         query = uow.events._session.query(uow.events._model_class)
@@ -81,6 +91,12 @@ async def get_events(
 
         total = query.count()
         items = query.offset(offset).limit(limit).all()
+
+        logger.info(
+            "events_fetch_response",
+            total=total,
+            returned=len(items),
+        )
 
         event_list = EventListResponse(
             items=[EventResponse.model_validate(item) for item in items],
@@ -104,11 +120,18 @@ async def delete_all_events(
         Number of deleted events.
 
     """
+    logger.warning("events_delete_all_requested")
+
     with uow.begin():
         events = uow.events.get_all(limit=10000)
         count = len(events)
 
         for event in events:
             uow.events.delete(event)
+
+    logger.info(
+        "events_delete_all_completed",
+        deleted_count=count,
+    )
 
     return DeleteEventsResponse(deleted_count=count)
