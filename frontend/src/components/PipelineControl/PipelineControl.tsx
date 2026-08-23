@@ -3,7 +3,7 @@ import styles from "./PipelineControl.module.css";
 
 interface PipelineControlProps {
   onFetchFeed: (urls: string[]) => Promise<void>;
-  onClearEvents: () => Promise<void>;
+  onClearEvents: () => Promise<number>; // Изменено с void на number
   isLoading?: boolean;
 }
 
