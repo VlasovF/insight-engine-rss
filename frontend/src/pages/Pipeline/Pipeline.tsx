@@ -1,13 +1,45 @@
 import React from "react";
+import PipelineControl from "../../components/PipelineControl/PipelineControl";
+import { useEvents } from "../../hooks/useEvents";
 import styles from "./Pipeline.module.css";
 
 const Pipeline: React.FC = () => {
+  const { loading, fetchEvents, deleteAllEvents } = useEvents();
+
+  const handleFetchFeed = async (urls: string[]) => {
+    const response = await fetch("http://localhost:8000/api/feeds/fetch", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ feed_urls: urls }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.detail || "Failed to fetch feeds");
+    }
+
+    // Refresh events after successful fetch
+    await fetchEvents({ limit: 100 });
+  };
+
+  const handleClearEvents = async (): Promise<number> => {
+    const deleted = await deleteAllEvents();
+    return deleted;
+  };
+
   return (
     <div className={styles.pipeline}>
-      <div className={styles.placeholder}>
-        <p>⚙️ Pipeline Control coming soon...</p>
-        <p className={styles.hint}>RSS fetch, embedding, evaluation controls</p>
-      </div>
+      <h2 className={styles.title}>⚙️ Pipeline Control</h2>
+      <p className={styles.description}>
+        Load RSS feeds and manage data in the pipeline
+      </p>
+      <PipelineControl
+        onFetchFeed={handleFetchFeed}
+        onClearEvents={handleClearEvents}
+        isLoading={loading}
+      />
     </div>
   );
 };
