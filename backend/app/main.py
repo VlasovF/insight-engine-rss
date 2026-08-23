@@ -1,6 +1,7 @@
 """FastAPI application entry point."""
 
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,10 +21,21 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # Create tables
 Base.metadata.create_all(bind=engine)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan context manager for startup and shutdown events."""
+    # Startup
+    yield
+    # Shutdown
+    engine.dispose()
+
+
 app = FastAPI(
     title="Insight Engine API",
     version="0.1.0",
     description="News analytics pipeline with dialectical insights",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -44,9 +56,3 @@ def get_uow() -> UnitOfWork:
 async def health_check() -> dict:
     """Health check endpoint."""
     return {"status": "ok"}
-
-
-@app.on_event("shutdown")
-def shutdown_event() -> None:
-    """Close database connections on shutdown."""
-    engine.dispose()
