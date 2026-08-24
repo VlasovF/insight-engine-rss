@@ -5,7 +5,9 @@ import tempfile
 from pathlib import Path
 from typing import Generator
 
+import chromadb
 import pytest
+from chromadb.config import Settings
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -96,3 +98,37 @@ def sample_feed_xml():
       </channel>
     </rss>
     """
+
+
+@pytest.fixture(scope="function")
+def chroma_collection():
+    """Create a temporary ChromaDB collection with test data."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        client = chromadb.PersistentClient(
+            path=tmpdir,
+            settings=Settings(anonymized_telemetry=False, allow_reset=True),
+        )
+
+        # Create collection with test data
+        collection = client.create_collection(
+            name="test_collection",
+            metadata={"hnsw:space": "cosine"},
+        )
+
+        # Add sample vectors
+        collection.add(
+            ids=["vec1", "vec2", "vec3"],
+            embeddings=[
+                [0.1, 0.2, 0.3],
+                [0.4, 0.5, 0.6],
+                [0.7, 0.8, 0.9],
+            ],
+            metadatas=[
+                {"label": "A"},
+                {"label": "B"},
+                {"label": "C"},
+            ],
+            documents=["doc1", "doc2", "doc3"],
+        )
+
+        yield collection, tmpdir

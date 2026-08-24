@@ -9,7 +9,7 @@ services:
     volumes:
     #   - ./backend:/app
       - ./app.db:/app/app.db
-    #   - ./chroma_data:/app/chroma_data
+      - ./chroma_data:/app/chroma_data
       - ./logs:/app/logs
     env_file:
       - .env
