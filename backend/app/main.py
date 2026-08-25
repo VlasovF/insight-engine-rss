@@ -8,7 +8,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from .api import events_router, feeds_router, vector_router
+from .api import embedding_router, events_router, feeds_router, vector_router
 from .database import engine
 from .models import Base
 from .utils import get_logger, setup_logging
@@ -96,6 +96,7 @@ app.add_middleware(
 app.include_router(feeds_router)
 app.include_router(events_router)
 app.include_router(vector_router)
+app.include_router(embedding_router)
 
 
 @app.get("/health")

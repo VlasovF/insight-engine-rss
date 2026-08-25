@@ -22,7 +22,7 @@ services:
       - LOG_FILE=${LOG_FILE:-./logs/pipeline.log}
     networks:
       - default
-      # - ollama
+      - ollama
     restart: unless-stopped
 
   frontend:
@@ -44,6 +44,6 @@ services:
 networks:
   default:
     name: ${PROJECT_PREFIX:-ie}-network
-  # ollama:
-  #   external:
-  #     name: ${OLLAMA_NETWORK:-ollama-network}
+  ollama:
+    external:
+      name: ${OLLAMA_NETWORK:-ollama_network}
