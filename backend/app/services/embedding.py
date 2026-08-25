@@ -12,6 +12,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from ..config import settings
 from ..utils import get_logger
 
 logger = get_logger(__name__)
@@ -34,24 +35,26 @@ class OllamaClient:
 
     def __init__(
         self,
-        host: str = "ollama",
-        port: int = 11434,
-        embed_model: str = "mxbai-embed-large:335m",
-        timeout: int = 60,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        embed_model: Optional[str] = None,
+        timeout: Optional[int] = None,
     ):
         """
         Initialize Ollama client.
 
         Args:
-            host: Ollama API host.
-            port: Ollama API port.
-            embed_model: Embedding model name.
-            timeout: Request timeout in seconds.
+            host: Ollama API host. Defaults to settings.
+            port: Ollama API port. Defaults to settings.
+            embed_model: Embedding model name. Defaults to settings.
+            timeout: Request timeout in seconds. Defaults to settings.
 
         """
-        self.base_url = f"http://{host}:{port}"
-        self.embed_model = embed_model
-        self.timeout = timeout
+        self.host = host or settings.OLLAMA_HOST
+        self.port = port or settings.OLLAMA_PORT
+        self.embed_model = embed_model or settings.OLLAMA_EMBED_MODEL
+        self.timeout = timeout or settings.OLLAMA_TIMEOUT
+        self.base_url = f"http://{self.host}:{self.port}"
         self._session: Optional[httpx.Client] = None
         self._dimension: Optional[int] = None
 
@@ -72,7 +75,6 @@ class OllamaClient:
             resp.raise_for_status()
             models = [m.get("name", "") for m in resp.json().get("models", [])]
 
-            # Check if embed model exists
             if not any(self.embed_model in m for m in models):
                 logger.warning(
                     "embedding_model_not_found",
@@ -139,7 +141,6 @@ class OllamaClient:
             if not embedding:
                 raise EmbeddingError("Empty embedding returned from Ollama")
 
-            # Store dimension if not set
             if self._dimension is None and embedding:
                 self._dimension = len(embedding)
                 logger.info(
@@ -148,7 +149,7 @@ class OllamaClient:
                     dimension=self._dimension,
                 )
 
-            return embedding  # type: ignore[no-any-return]
+            return embedding
         except httpx.TimeoutException as e:
             logger.error("embedding_timeout", error=str(e))
             raise EmbeddingError(f"Timeout getting embedding: {str(e)}") from e
@@ -162,23 +163,24 @@ class OllamaClient:
     def get_embeddings_batch(
         self,
         texts: List[str],
-        batch_size: int = 10,
-        delay: float = 0.1,
+        batch_size: Optional[int] = None,
+        delay: Optional[float] = None,
     ) -> List[List[float]]:
         """
         Get embeddings for multiple texts.
 
         Args:
             texts: List of input texts.
-            batch_size: Number of texts per batch
-            (not used for Ollama, kept for API compatibility).
+            batch_size: Number of texts per batch (kept for API compatibility).
             delay: Delay between requests in seconds.
 
         Returns:
             List of embedding vectors. Empty list for failed texts.
 
         """
+        delay = delay or settings.OLLAMA_EMBED_DELAY
         embeddings = []
+
         for i, text in enumerate(texts):
             try:
                 embedding = self.get_embedding(text)
@@ -196,7 +198,6 @@ class OllamaClient:
                 )
                 embeddings.append([])
 
-            # Small delay between requests
             if len(texts) > 1 and i < len(texts) - 1:
                 time.sleep(delay)
 
@@ -216,7 +217,6 @@ class OllamaClient:
         if self._dimension is not None:
             return self._dimension
 
-        # Try to get dimension by embedding a test text
         test_text = "test"
         embedding = self.get_embedding(test_text)
         if embedding:
@@ -246,7 +246,6 @@ class OllamaClient:
             models = data.get("models", [])
             model_names = [m.get("name", "") for m in models]
 
-            # Check if model exists (exact match or prefix match)
             for name in model_names:
                 if name == self.embed_model or name.startswith(self.embed_model):
                     return True
