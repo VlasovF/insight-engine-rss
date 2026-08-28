@@ -1,6 +1,8 @@
 """Tests for repositories."""
 
-from app.models import Event, PipelineCheckpoint
+import pytest
+
+from app.models import CheckpointStage, Event, PipelineCheckpoint
 
 
 class TestEventRepository:
@@ -194,66 +196,108 @@ class TestCheckpointRepository:
 
     def test_add_checkpoint(self, uow):
         """Test adding a checkpoint."""
-        checkpoint = PipelineCheckpoint(stage_name="test_stage")
+        checkpoint = PipelineCheckpoint(stage_name=CheckpointStage.EMBEDDING_COMPLETED)
         uow.checkpoints.add(checkpoint)
         uow.commit()
 
         saved = uow.checkpoints.get_by_id(checkpoint.id)
         assert saved is not None
-        assert saved.stage_name == "test_stage"
+        assert saved.stage_name == CheckpointStage.EMBEDDING_COMPLETED
 
     def test_get_by_stage(self, uow):
         """Test getting checkpoint by stage name."""
-        checkpoint = PipelineCheckpoint(stage_name="embedding_completed")
+        checkpoint = PipelineCheckpoint(stage_name=CheckpointStage.EMBEDDING_COMPLETED)
         uow.checkpoints.add(checkpoint)
         uow.commit()
 
-        found = uow.checkpoints.get_by_stage("embedding_completed")
+        found = uow.checkpoints.get_by_stage(CheckpointStage.EMBEDDING_COMPLETED)
         assert found is not None
         assert found.id == checkpoint.id
 
-        not_found = uow.checkpoints.get_by_stage("nonexistent")
-        assert not_found is None
+        with pytest.raises(ValueError):
+            uow.checkpoints.get_by_stage("nonexistent")
 
     def test_get_or_create_existing(self, uow):
         """Test get_or_create with existing checkpoint."""
-        checkpoint = PipelineCheckpoint(stage_name="existing_stage")
+        checkpoint = PipelineCheckpoint(stage_name=CheckpointStage.EMBEDDING_COMPLETED)
         uow.checkpoints.add(checkpoint)
         uow.commit()
 
-        result = uow.checkpoints.get_or_create("existing_stage")
+        result = uow.checkpoints.get_or_create(CheckpointStage.EMBEDDING_COMPLETED)
         assert result.id == checkpoint.id
 
     def test_get_or_create_new(self, uow):
         """Test get_or_create with new checkpoint."""
-        result = uow.checkpoints.get_or_create("new_stage")
+        result = uow.checkpoints.get_or_create(CheckpointStage.EMBEDDING_COMPLETED)
         uow.commit()
 
         assert result.id is not None
-        assert result.stage_name == "new_stage"
+        assert result.stage_name == CheckpointStage.EMBEDDING_COMPLETED
 
         # Verify in DB
-        saved = uow.checkpoints.get_by_stage("new_stage")
+        saved = uow.checkpoints.get_by_stage(CheckpointStage.EMBEDDING_COMPLETED)
         assert saved is not None
 
     def test_mark_completed(self, uow):
         """Test marking stage as completed."""
-        result = uow.checkpoints.mark_completed("embedding_completed")
+        result = uow.checkpoints.mark_completed(CheckpointStage.EMBEDDING_COMPLETED)
         uow.commit()
 
-        assert result.stage_name == "embedding_completed"
+        assert result.stage_name == CheckpointStage.EMBEDDING_COMPLETED
 
-        saved = uow.checkpoints.get_by_stage("embedding_completed")
+        saved = uow.checkpoints.get_by_stage(CheckpointStage.EMBEDDING_COMPLETED)
         assert saved is not None
 
     def test_delete_by_stage(self, uow):
         """Test deleting checkpoint by stage."""
-        checkpoint = PipelineCheckpoint(stage_name="to_delete")
+        checkpoint = PipelineCheckpoint(stage_name=CheckpointStage.EMBEDDING_COMPLETED)
         uow.checkpoints.add(checkpoint)
         uow.commit()
 
-        uow.checkpoints.delete_by_stage("to_delete")
+        uow.checkpoints.delete_by_stage(CheckpointStage.EMBEDDING_COMPLETED)
         uow.commit()
 
-        deleted = uow.checkpoints.get_by_stage("to_delete")
+        deleted = uow.checkpoints.get_by_stage(CheckpointStage.EMBEDDING_COMPLETED)
         assert deleted is None
+
+    def test_is_stage_completed(self, uow):
+        """Test checking if stage is completed."""
+        assert (
+            uow.checkpoints.is_stage_completed(CheckpointStage.EMBEDDING_COMPLETED)
+            is False
+        )
+
+        uow.checkpoints.mark_completed(CheckpointStage.EMBEDDING_COMPLETED)
+        uow.commit()
+
+        assert (
+            uow.checkpoints.is_stage_completed(CheckpointStage.EMBEDDING_COMPLETED)
+            is True
+        )
+
+    def test_get_pipeline_progress(self, uow):
+        """Test getting pipeline progress."""
+        # Initially no checkpoints
+        progress = uow.checkpoints.get_pipeline_progress()
+        assert progress["completed_stages"] == []
+        assert progress["percentage"] == 0
+
+        # Add a checkpoint
+        uow.checkpoints.mark_completed(CheckpointStage.EMBEDDING_COMPLETED)
+        uow.commit()
+
+        progress = uow.checkpoints.get_pipeline_progress()
+        assert CheckpointStage.EMBEDDING_COMPLETED in progress["completed_stages"]
+        assert progress["percentage"] == 33  # 1 of 3 stages
+
+    def test_get_completed_checkpoints(self, uow):
+        """Test getting all completed checkpoints."""
+        uow.checkpoints.mark_completed(
+            CheckpointStage.EMBEDDING_COMPLETED, metadata={"processed": 10}
+        )
+        uow.commit()
+
+        checkpoints = uow.checkpoints.get_completed_checkpoints()
+        assert len(checkpoints) == 1
+        assert checkpoints[0]["stage_name"] == CheckpointStage.EMBEDDING_COMPLETED
+        assert checkpoints[0]["metadata"]["processed"] == 10

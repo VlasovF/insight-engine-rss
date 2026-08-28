@@ -4,7 +4,7 @@ from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
 
-from .checkpoint import PipelineCheckpoint  # noqa: E402
-from .event import Event  # noqa: E402
+from .checkpoint import CheckpointStage, PipelineCheckpoint  # noqa: E402
+from .event import Event, EventStatus  # noqa: E402
 
-__all__ = ["Base", "Event", "PipelineCheckpoint"]
+__all__ = ["Base", "Event", "EventStatus", "PipelineCheckpoint", "CheckpointStage"]
