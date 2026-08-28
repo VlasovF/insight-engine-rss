@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, ConfigDict
 
 from ..dependencies import get_uow
+from ..models import CheckpointStage
 from ..uow import UnitOfWork
 from ..utils import get_logger
 
@@ -128,6 +129,19 @@ async def delete_all_events(
 
         for event in events:
             uow.events.delete(event)
+
+        # Delete all checkpoints
+        stages = [
+            CheckpointStage.EMBEDDING_COMPLETED,
+            CheckpointStage.EVALUATION_COMPLETED,
+            CheckpointStage.INSIGHT_GENERATED,
+        ]
+        for stage in stages:
+            try:
+                uow.checkpoints.delete_by_stage(stage)
+                logger.info("checkpoint_deleted", stage=stage)
+            except ValueError:
+                pass
 
     logger.info(
         "events_delete_all_completed",

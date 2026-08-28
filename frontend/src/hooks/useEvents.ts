@@ -26,6 +26,12 @@ interface UseEventsResult {
     offset?: number;
   }) => Promise<void>;
   deleteAllEvents: () => Promise<number>;
+  runEmbedding: () => Promise<{
+    processed: number;
+    duplicates_found: number;
+    errors: number;
+  }>;
+  getPipelineStatus: () => Promise<Record<string, number>>;
 }
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -98,7 +104,63 @@ export function useEvents(): UseEventsResult {
     }
   }, []);
 
-  // Initial load on mount - using a separate effect with no state setters
+  const runEmbedding = useCallback(async (): Promise<{
+    processed: number;
+    duplicates_found: number;
+    errors: number;
+  }> => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      console.log("🚀 Running embedding pipeline...");
+      const response = await fetch(`${API_URL}/api/pipeline/run_embedding`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("❌ Embedding failed:", errorData);
+        throw new Error(
+          errorData.detail || `Failed to run embedding: ${response.status}`,
+        );
+      }
+
+      const data = await response.json();
+      console.log("✅ Embedding completed:", data);
+
+      // Refresh events after embedding
+      await fetchEvents({ limit: 100 });
+
+      return data;
+    } catch (err) {
+      console.error("❌ Embedding error:", err);
+      setError(err instanceof Error ? err.message : "Unknown error");
+      return { processed: 0, duplicates_found: 0, errors: 0 };
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchEvents]);
+
+  const getPipelineStatus = useCallback(async (): Promise<
+    Record<string, number>
+  > => {
+    try {
+      const response = await fetch(`${API_URL}/api/pipeline/status`);
+      if (!response.ok) {
+        throw new Error(`Failed to get pipeline status: ${response.status}`);
+      }
+      return await response.json();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+      return {};
+    }
+  }, []);
+
+  // Initial load on mount
   useEffect(() => {
     const loadInitial = async () => {
       await fetchEvents({ limit: 100 });
@@ -114,5 +176,7 @@ export function useEvents(): UseEventsResult {
     error,
     fetchEvents,
     deleteAllEvents,
+    runEmbedding,
+    getPipelineStatus,
   };
 }

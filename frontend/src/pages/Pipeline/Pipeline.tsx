@@ -4,7 +4,13 @@ import { useEvents } from "../../hooks/useEvents";
 import styles from "./Pipeline.module.css";
 
 const Pipeline: React.FC = () => {
-  const { loading, fetchEvents, deleteAllEvents } = useEvents();
+  const {
+    loading,
+    fetchEvents,
+    deleteAllEvents,
+    runEmbedding,
+    getPipelineStatus,
+  } = useEvents();
 
   const handleFetchFeed = async (urls: string[]) => {
     const response = await fetch("http://localhost:8000/api/feeds/fetch", {
@@ -20,7 +26,6 @@ const Pipeline: React.FC = () => {
       throw new Error(error.detail || "Failed to fetch feeds");
     }
 
-    // Refresh events after successful fetch
     await fetchEvents({ limit: 100 });
   };
 
@@ -33,11 +38,13 @@ const Pipeline: React.FC = () => {
     <div className={styles.pipeline}>
       <h2 className={styles.title}>⚙️ Pipeline Control</h2>
       <p className={styles.description}>
-        Load RSS feeds and manage data in the pipeline
+        Load RSS feeds, run embedding, and manage data in the pipeline
       </p>
       <PipelineControl
         onFetchFeed={handleFetchFeed}
         onClearEvents={handleClearEvents}
+        onRunEmbedding={runEmbedding}
+        onGetStatus={getPipelineStatus}
         isLoading={loading}
       />
     </div>

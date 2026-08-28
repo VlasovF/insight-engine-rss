@@ -20,6 +20,94 @@
   margin: 0 0 0.75rem 0;
 }
 
+/* Status Grid */
+.statusGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.statusItem {
+  background-color: #0d1b2a;
+  border-radius: 8px;
+  padding: 0.75rem;
+  text-align: center;
+  border: 1px solid #2a3a5e;
+}
+
+.statusLabel {
+  display: block;
+  color: #8a9bb5;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.statusValue {
+  display: block;
+  color: #e0e0e0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-top: 0.25rem;
+}
+
+.statusPending .statusValue {
+  color: #d4c84a;
+}
+
+.statusEmbedded .statusValue {
+  color: #4ad8c8;
+}
+
+.statusEvaluated .statusValue {
+  color: #4ad86a;
+}
+
+.refreshButton {
+  background: none;
+  border: 1px solid #2a3a5e;
+  border-radius: 6px;
+  color: #8a9bb5;
+  padding: 0.4rem 1rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.refreshButton:hover:not(:disabled) {
+  background-color: #1a2a4a;
+  color: #e0e0e0;
+}
+
+.refreshButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Embedding */
+.embedButton {
+  background-color: #1a3a4a;
+  border: 1px solid #2a5a6a;
+}
+
+.embedButton:hover:not(:disabled) {
+  background-color: #2a4a5a;
+}
+
+.embeddingResult {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: #0d1b2a;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: #8a9bb5;
+}
+
+/* Input Group */
 .inputGroup {
   display: flex;
   flex-direction: column;
@@ -53,6 +141,7 @@
   color: #5a6b85;
 }
 
+/* Buttons */
 .button {
   background-color: #2a3a5e;
   border: none;
