@@ -9,6 +9,7 @@ const Pipeline: React.FC = () => {
     fetchEvents,
     deleteAllEvents,
     runEmbedding,
+    runEvaluation,
     getPipelineStatus,
   } = useEvents();
 
@@ -38,12 +39,14 @@ const Pipeline: React.FC = () => {
     <div className={styles.pipeline}>
       <h2 className={styles.title}>⚙️ Pipeline Control</h2>
       <p className={styles.description}>
-        Load RSS feeds, run embedding, and manage data in the pipeline
+        Load RSS feeds, run embedding, evaluate events, and manage data in the
+        pipeline
       </p>
       <PipelineControl
         onFetchFeed={handleFetchFeed}
         onClearEvents={handleClearEvents}
         onRunEmbedding={runEmbedding}
+        onRunEvaluation={runEvaluation}
         onGetStatus={getPipelineStatus}
         isLoading={loading}
       />

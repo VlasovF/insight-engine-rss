@@ -14,6 +14,12 @@ interface PipelineControlProps {
     processed: number;
     duplicates_found: number;
     errors: number;
+    batch_id: string;
+  }>;
+  onRunEvaluation: () => Promise<{
+    processed: number;
+    errors: number;
+    batch_id: string;
   }>;
   onGetStatus: () => Promise<Record<string, number>>;
   isLoading?: boolean;
@@ -23,6 +29,7 @@ const PipelineControl: React.FC<PipelineControlProps> = ({
   onFetchFeed,
   onClearEvents,
   onRunEmbedding,
+  onRunEvaluation,
   onGetStatus,
   isLoading = false,
 }) => {
@@ -30,6 +37,7 @@ const PipelineControl: React.FC<PipelineControlProps> = ({
   const [isFetching, setIsFetching] = useState<boolean>(false);
   const [isClearing, setIsClearing] = useState<boolean>(false);
   const [isEmbedding, setIsEmbedding] = useState<boolean>(false);
+  const [isEvaluating, setIsEvaluating] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [status, setStatus] = useState<PipelineStatus>({
@@ -42,6 +50,10 @@ const PipelineControl: React.FC<PipelineControlProps> = ({
     duplicates: number;
     errors: number;
   } | null>(null);
+  const [evaluationResult, setEvaluationResult] = useState<{
+    processed: number;
+    errors: number;
+  } | null>(null);
 
   const loadStatus = useCallback(async () => {
     try {
@@ -52,7 +64,7 @@ const PipelineControl: React.FC<PipelineControlProps> = ({
         evaluated: data.evaluated || 0,
       });
     } catch {
-      // Silently fail - status will remain as is
+      // Silently fail
     }
   }, [onGetStatus]);
 
@@ -62,7 +74,7 @@ const PipelineControl: React.FC<PipelineControlProps> = ({
     };
     loadInitial();
 
-    const interval = setInterval(loadStatus, 10000); // Refresh every 10s
+    const interval = setInterval(loadStatus, 10000);
     return () => clearInterval(interval);
   }, [loadStatus]);
 
@@ -111,6 +123,7 @@ const PipelineControl: React.FC<PipelineControlProps> = ({
       const count = await onClearEvents();
       setSuccess(`Deleted ${count} event(s)`);
       setEmbeddingResult(null);
+      setEvaluationResult(null);
       await loadStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to clear events");
@@ -132,7 +145,9 @@ const PipelineControl: React.FC<PipelineControlProps> = ({
         duplicates: result.duplicates_found,
         errors: result.errors,
       });
-      setSuccess(`Embedding completed: ${result.processed} events processed`);
+      setSuccess(
+        `Embedding completed: ${result.processed} events processed (batch: ${result.batch_id.slice(0, 8)})`,
+      );
       await loadStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to run embedding");
@@ -141,7 +156,31 @@ const PipelineControl: React.FC<PipelineControlProps> = ({
     }
   };
 
-  const isBusy = isLoading || isFetching || isClearing || isEmbedding;
+  const handleRunEvaluation = async () => {
+    setIsEvaluating(true);
+    setError(null);
+    setSuccess(null);
+    setEvaluationResult(null);
+
+    try {
+      const result = await onRunEvaluation();
+      setEvaluationResult({
+        processed: result.processed,
+        errors: result.errors,
+      });
+      setSuccess(
+        `Evaluation completed: ${result.processed} events evaluated (batch: ${result.batch_id.slice(0, 8)})`,
+      );
+      await loadStatus();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to run evaluation");
+    } finally {
+      setIsEvaluating(false);
+    }
+  };
+
+  const isBusy =
+    isLoading || isFetching || isClearing || isEmbedding || isEvaluating;
 
   return (
     <div className={styles.control}>
@@ -187,10 +226,31 @@ const PipelineControl: React.FC<PipelineControlProps> = ({
           <p className={styles.hint}>No pending events to embed</p>
         )}
         {embeddingResult && (
-          <div className={styles.embeddingResult}>
+          <div className={styles.result}>
             <span>✅ Processed: {embeddingResult.processed}</span>
             <span>🔄 Duplicates: {embeddingResult.duplicates}</span>
             <span>❌ Errors: {embeddingResult.errors}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Evaluation */}
+      <div className={styles.section}>
+        <h3 className={styles.sectionTitle}>📊 Run Evaluation</h3>
+        <button
+          className={`${styles.button} ${styles.evaluateButton}`}
+          onClick={handleRunEvaluation}
+          disabled={isBusy || status.embedded === 0}
+        >
+          {isEvaluating ? "⏳ Evaluating..." : "📊 Run Evaluation"}
+        </button>
+        {status.embedded === 0 && !isEvaluating && (
+          <p className={styles.hint}>No embedded events to evaluate</p>
+        )}
+        {evaluationResult && (
+          <div className={styles.result}>
+            <span>✅ Processed: {evaluationResult.processed}</span>
+            <span>❌ Errors: {evaluationResult.errors}</span>
           </div>
         )}
       </div>

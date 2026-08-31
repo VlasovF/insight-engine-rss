@@ -1,11 +1,14 @@
 import React, { useState } from "react";
 import EventTable from "../../components/EventTable/EventTable";
+import EventModal from "../../components/EventModal/EventModal";
 import { useEvents } from "../../hooks/useEvents";
 import styles from "./Feed.module.css";
 
 const Feed: React.FC = () => {
-  const { events, total, loading, fetchEvents } = useEvents();
+  const { events, total, loading, fetchEvents, fetchEvent } = useEvents();
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
 
   const handleFilterChange = (status: string) => {
     setStatusFilter(status);
@@ -20,6 +23,16 @@ const Feed: React.FC = () => {
       status: statusFilter || undefined,
       limit: 100,
     });
+  };
+
+  const handleRowClick = (event: { id: string }) => {
+    setSelectedEventId(event.id);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedEventId(null);
   };
 
   return (
@@ -51,7 +64,19 @@ const Feed: React.FC = () => {
           </button>
         </div>
       </div>
-      <EventTable events={events} loading={loading} />
+
+      <EventTable
+        events={events}
+        loading={loading}
+        onRowClick={handleRowClick}
+      />
+
+      <EventModal
+        eventId={selectedEventId}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        onFetchEvent={fetchEvent}
+      />
     </div>
   );
 };

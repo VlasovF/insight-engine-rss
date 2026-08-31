@@ -9,7 +9,16 @@ export interface Event {
   status: "pending" | "embedded" | "evaluated";
   is_duplicate: boolean;
   content_hash: string;
-  evaluation_data: Record<string, unknown> | null;
+  evaluation_data: {
+    results: {
+      urgency: { score: number; summary: string };
+      conflict: { score: number; summary: string };
+      surprise: { score: number; summary: string };
+    };
+    combined_summary: string;
+    pipeline_version: string;
+    evaluated_at: string;
+  } | null;
   created_at: string;
   updated_at: string;
 }
@@ -25,11 +34,18 @@ interface UseEventsResult {
     limit?: number;
     offset?: number;
   }) => Promise<void>;
+  fetchEvent: (id: string) => Promise<Event | null>;
   deleteAllEvents: () => Promise<number>;
   runEmbedding: () => Promise<{
     processed: number;
     duplicates_found: number;
     errors: number;
+    batch_id: string;
+  }>;
+  runEvaluation: () => Promise<{
+    processed: number;
+    errors: number;
+    batch_id: string;
   }>;
   getPipelineStatus: () => Promise<Record<string, number>>;
 }
@@ -79,6 +95,19 @@ export function useEvents(): UseEventsResult {
     [],
   );
 
+  const fetchEvent = useCallback(async (id: string): Promise<Event | null> => {
+    try {
+      const response = await fetch(`${API_URL}/api/events/${id}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch event: ${response.status}`);
+      }
+      return await response.json();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+      return null;
+    }
+  }, []);
+
   const deleteAllEvents = useCallback(async (): Promise<number> => {
     setLoading(true);
     setError(null);
@@ -104,42 +133,57 @@ export function useEvents(): UseEventsResult {
     }
   }, []);
 
-  const runEmbedding = useCallback(async (): Promise<{
-    processed: number;
-    duplicates_found: number;
-    errors: number;
-  }> => {
+  const runEmbedding = useCallback(async () => {
     setLoading(true);
     setError(null);
 
     try {
-      console.log("🚀 Running embedding pipeline...");
       const response = await fetch(`${API_URL}/api/pipeline/run_embedding`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.error("❌ Embedding failed:", errorData);
         throw new Error(
           errorData.detail || `Failed to run embedding: ${response.status}`,
         );
       }
 
       const data = await response.json();
-      console.log("✅ Embedding completed:", data);
-
-      // Refresh events after embedding
       await fetchEvents({ limit: 100 });
-
       return data;
     } catch (err) {
-      console.error("❌ Embedding error:", err);
       setError(err instanceof Error ? err.message : "Unknown error");
-      return { processed: 0, duplicates_found: 0, errors: 0 };
+      return { processed: 0, duplicates_found: 0, errors: 0, batch_id: "" };
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchEvents]);
+
+  const runEvaluation = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`${API_URL}/api/pipeline/run_evaluation`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.detail || `Failed to run evaluation: ${response.status}`,
+        );
+      }
+
+      const data = await response.json();
+      await fetchEvents({ limit: 100 });
+      return data;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+      return { processed: 0, errors: 0, batch_id: "" };
     } finally {
       setLoading(false);
     }
@@ -160,14 +204,12 @@ export function useEvents(): UseEventsResult {
     }
   }, []);
 
-  // Initial load on mount
   useEffect(() => {
     const loadInitial = async () => {
       await fetchEvents({ limit: 100 });
     };
     loadInitial();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [fetchEvents]);
 
   return {
     events,
@@ -175,8 +217,10 @@ export function useEvents(): UseEventsResult {
     loading,
     error,
     fetchEvents,
+    fetchEvent,
     deleteAllEvents,
     runEmbedding,
+    runEvaluation,
     getPipelineStatus,
   };
 }

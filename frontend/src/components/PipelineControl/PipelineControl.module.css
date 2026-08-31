@@ -200,3 +200,23 @@
   color: #4ad86a;
   margin-top: 1rem;
 }
+
+.evaluateButton {
+  background-color: #1a3a3a;
+  border: 1px solid #2a5a5a;
+}
+
+.evaluateButton:hover:not(:disabled) {
+  background-color: #2a4a4a;
+}
+
+.result {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background-color: #0d1b2a;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  color: #8a9bb5;
+}

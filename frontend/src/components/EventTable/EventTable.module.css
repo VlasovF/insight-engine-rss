@@ -62,12 +62,45 @@
 
 .statusEmbedded {
   background-color: #1a3a3a;
-  color: #4ad4c8;
+  color: #4ad8c8;
 }
 
 .statusEvaluated {
   background-color: #1a3a2a;
   color: #4ad86a;
+}
+
+/* Score Indicators */
+.scoreIndicators {
+  display: flex;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.indicator {
+  font-size: 0.9rem;
+  padding: 0.1rem 0.2rem;
+  border-radius: 4px;
+  opacity: 0.8;
+}
+
+.indicatorHigh {
+  opacity: 1;
+  background-color: rgba(212, 106, 74, 0.2);
+}
+
+.indicatorMedium {
+  opacity: 0.7;
+  background-color: rgba(212, 200, 74, 0.15);
+}
+
+.indicatorLow {
+  opacity: 0.4;
+}
+
+.noScores {
+  color: #5a6b85;
+  font-size: 0.85rem;
 }
 
 .duplicateBadge {
