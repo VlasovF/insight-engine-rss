@@ -1,10 +1,10 @@
 """Pipeline checkpoint model."""
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import List, Optional
 from uuid import uuid4
 
-from sqlalchemy import JSON, String
+from sqlalchemy import JSON, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from . import Base  # type: ignore
@@ -40,12 +40,19 @@ class PipelineCheckpoint(Base):  # type: ignore
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid4())
     )
-    stage_name: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    stage_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    batch_id: Mapped[str] = mapped_column(String(36), default=lambda: str(uuid4()))
+    event_ids: Mapped[Optional[List[str]]] = mapped_column(JSON, nullable=True)
+    event_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     completed_at: Mapped[datetime] = mapped_column(
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
     )
     checkpoint_metadata: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("stage_name", "batch_id", name="uq_checkpoint_stage_batch"),
+    )
 
     def __repr__(self) -> str:
         """Return string representation of the checkpoint."""
@@ -57,6 +64,9 @@ class PipelineCheckpoint(Base):  # type: ignore
         return {
             "id": self.id,
             "stage_name": self.stage_name,
+            "batch_id": self.batch_id,
+            "event_count": self.event_count,
+            "event_ids": self.event_ids[:10] if self.event_ids else [],
             "completed_at": self.completed_at.isoformat(),
             "metadata": self.checkpoint_metadata,
         }

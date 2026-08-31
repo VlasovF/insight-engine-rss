@@ -10,6 +10,7 @@ from ..dependencies import get_uow
 from ..models import CheckpointStage
 from ..uow import UnitOfWork
 from ..utils import get_logger
+from ..vector import reset_collection
 
 router = APIRouter(prefix="/api/events", tags=["events"])
 logger = get_logger(__name__)
@@ -142,6 +143,13 @@ async def delete_all_events(
                 logger.info("checkpoint_deleted", stage=stage)
             except ValueError:
                 pass
+
+    # Reset ChromaDB collection
+    try:
+        reset_collection()
+        logger.info("chroma_collection_reset")
+    except Exception as e:
+        logger.error("chroma_reset_failed", error=str(e))
 
     logger.info(
         "events_delete_all_completed",

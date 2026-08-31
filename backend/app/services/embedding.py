@@ -18,14 +18,50 @@ from ..utils import get_logger
 logger = get_logger(__name__)
 
 
-class EmbeddingError(Exception):
-    """Raised when embedding generation fails."""
+class ObsidianAIError(Exception):
+    """Base exception for all application errors."""
+
+    pass
+
+
+class ConfigurationError(ObsidianAIError):
+    """Raised when configuration is invalid."""
 
     pass
 
 
 class ServiceUnavailableError(Exception):
     """Raised when Ollama service is unavailable."""
+
+    pass
+
+
+class EmbeddingError(ObsidianAIError):
+    """Raised when embedding generation fails."""
+
+    pass
+
+
+class QdrantError(ObsidianAIError):
+    """Raised when Qdrant operations fail."""
+
+    pass
+
+
+class FileProcessingError(ObsidianAIError):
+    """Raised when file processing fails."""
+
+    pass
+
+
+class DeduplicationError(ObsidianAIError):
+    """Raised when duplicate detection fails."""
+
+    pass
+
+
+class LLMGenerationError(ObsidianAIError):
+    """Raised when LLM text generation fails."""
 
     pass
 
@@ -38,6 +74,7 @@ class OllamaClient:
         host: Optional[str] = None,
         port: Optional[int] = None,
         embed_model: Optional[str] = None,
+        llm_model: Optional[str] = None,
         timeout: Optional[int] = None,
     ):
         """
@@ -47,12 +84,14 @@ class OllamaClient:
             host: Ollama API host. Defaults to settings.
             port: Ollama API port. Defaults to settings.
             embed_model: Embedding model name. Defaults to settings.
+            llm_model: LLM model name. Defaults to settings.
             timeout: Request timeout in seconds. Defaults to settings.
 
         """
         self.host = host or settings.OLLAMA_HOST
         self.port = port or settings.OLLAMA_PORT
         self.embed_model = embed_model or settings.OLLAMA_EMBED_MODEL
+        self.llm_model = llm_model or settings.OLLAMA_LLM_MODEL
         self.timeout = timeout or settings.OLLAMA_TIMEOUT
         self.base_url = f"http://{self.host}:{self.port}"
         self._session: Optional[httpx.Client] = None
@@ -159,6 +198,65 @@ class OllamaClient:
         except json.JSONDecodeError as e:
             logger.error("embedding_invalid_json", error=str(e))
             raise EmbeddingError(f"Invalid JSON response: {str(e)}") from e
+
+    def generate_text(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        temperature: float = 0.7,
+        max_tokens: int = 2000,
+    ) -> str:
+        """
+        Generate text using LLM.
+
+        Args:
+            prompt: User prompt.
+            system_prompt: System instruction.
+            temperature: Temperature parameter (0.0 to 1.0).
+            max_tokens: Maximum tokens to generate.
+
+        Returns:
+            Generated text.
+
+        Raises:
+            LLMGenerationError: If generation fails.
+
+        """
+        try:
+            messages: list[dict[str, str]] = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            payload: dict[str, Any] = {
+                "model": self.llm_model,
+                "messages": messages,
+                "stream": False,
+                "options": {
+                    "temperature": temperature,
+                    "num_predict": max_tokens,
+                },
+            }
+
+            resp = self.session.post(
+                f"{self.base_url}/api/chat",
+                json=payload,
+                timeout=self.timeout * 2,
+            )
+            resp.raise_for_status()
+            data: dict[str, Any] = resp.json()
+            response = data.get("message", {}).get("content", "")
+
+            if not response:
+                raise LLMGenerationError("Empty response from Ollama")
+
+            return response  # type: ignore[no-any-return]
+        except httpx.TimeoutException as e:
+            raise LLMGenerationError(f"Timeout generating text: {str(e)}") from e
+        except httpx.HTTPStatusError as e:
+            raise LLMGenerationError(f"Request failed: {str(e)}") from e
+        except json.JSONDecodeError as e:
+            raise LLMGenerationError(f"Invalid JSON response: {str(e)}") from e
 
     def get_embeddings_batch(
         self,

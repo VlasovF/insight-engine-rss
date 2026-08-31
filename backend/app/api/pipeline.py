@@ -7,6 +7,12 @@ from pydantic import BaseModel
 
 from ..config import settings
 from ..dependencies import get_uow
+from ..evaluation import (
+    ConflictScoring,
+    EvaluationPipeline,
+    SurpriseScoring,
+    UrgencyScoring,
+)
 from ..models import CheckpointStage, EventStatus
 from ..services import OllamaClient
 from ..uow import UnitOfWork
@@ -23,6 +29,15 @@ class EmbeddingResponse(BaseModel):
     processed: int
     duplicates_found: int
     errors: int
+    batch_id: Optional[str] = None
+
+
+class EvaluationResponse(BaseModel):
+    """Response model for evaluation pipeline run."""
+
+    processed: int
+    errors: int
+    batch_id: Optional[str] = None
 
 
 class ResetResponse(BaseModel):
@@ -40,9 +55,25 @@ class PipelineProgressResponse(BaseModel):
     last_completed: Optional[str]
 
 
+class CheckpointsSummaryResponse(BaseModel):
+    """Response model for checkpoints summary."""
+
+    checkpoints: List[dict]
+
+
 def get_embedding_service() -> OllamaClient:
     """Dependency injection for EmbeddingService."""
     return OllamaClient()
+
+
+def get_evaluation_pipeline() -> EvaluationPipeline:
+    """Dependency injection for EvaluationPipeline."""
+    ollama_client = OllamaClient()
+    pipeline = EvaluationPipeline()
+    pipeline.add_strategy(UrgencyScoring(ollama_client))
+    pipeline.add_strategy(ConflictScoring(ollama_client))
+    pipeline.add_strategy(SurpriseScoring(ollama_client))
+    return pipeline
 
 
 def _check_ollama_availability(embedding_service: OllamaClient) -> None:
@@ -169,25 +200,37 @@ async def run_embedding_pipeline(
     """
     logger.info("embedding_pipeline_started")
 
-    # Check service availability
     _check_ollama_availability(embedding_service)
 
     with uow.begin():
-        # Check if already completed
-        if uow.checkpoints.is_stage_completed(CheckpointStage.EMBEDDING_COMPLETED):
-            logger.info("embedding_pipeline_already_completed")
-            return EmbeddingResponse(processed=0, duplicates_found=0, errors=0)
-
-        # Get pending events
+        # Get all pending events
         pending_events = uow.events.get_pending(limit=settings.PIPELINE_MAX_EVENTS)
 
         if not pending_events:
             logger.info("embedding_pipeline_no_pending")
-            return EmbeddingResponse(processed=0, duplicates_found=0, errors=0)
+            return EmbeddingResponse(
+                processed=0, duplicates_found=0, errors=0, batch_id=""
+            )
+
+        # Get already processed event IDs (from all embedding checkpoints)
+        processed_ids = set(
+            uow.checkpoints.get_processed_event_ids(CheckpointStage.EMBEDDING_COMPLETED)
+        )
+
+        # Filter out already processed events
+        events_to_process = [e for e in pending_events if e.id not in processed_ids]
+
+        if not events_to_process:
+            logger.info("embedding_pipeline_no_new_events")
+            return EmbeddingResponse(
+                processed=0, duplicates_found=0, errors=0, batch_id=""
+            )
 
         logger.info(
-            "embedding_pipeline_pending_count",
-            count=len(pending_events),
+            "embedding_pipeline_events_to_process",
+            total_pending=len(pending_events),
+            already_processed=len(processed_ids),
+            new_events=len(events_to_process),
         )
 
         # Get ChromaDB collection
@@ -195,12 +238,12 @@ async def run_embedding_pipeline(
             collection_name=settings.CHROMA_COLLECTION,
         )
 
-        # Process events
         processed = 0
         duplicates_found = 0
         errors = 0
+        processed_event_ids = []
 
-        for event in pending_events:
+        for event in events_to_process:
             is_processed, is_duplicate, error = _process_single_event(
                 event,
                 collection,
@@ -214,39 +257,148 @@ async def run_embedding_pipeline(
             if is_processed:
                 _update_event_status(uow, event.id, is_duplicate)
                 processed += 1
+                processed_event_ids.append(event.id)
                 if is_duplicate:
                     duplicates_found += 1
 
-                logger.debug(
-                    "event_embedded",
-                    event_id=event.id,
-                    title=event.title[:50],
-                    is_duplicate=is_duplicate,
-                )
-
-        # Mark checkpoint with metadata
-        metadata = {
-            "processed": processed,
-            "duplicates_found": duplicates_found,
-            "errors": errors,
-            "total_pending": len(pending_events),
-        }
-        uow.checkpoints.mark_completed(
-            CheckpointStage.EMBEDDING_COMPLETED,
-            metadata=metadata,
-        )
+        # Create checkpoint for this batch
+        if processed_event_ids:
+            metadata = {
+                "processed": processed,
+                "duplicates_found": duplicates_found,
+                "errors": errors,
+                "total_pending": len(pending_events),
+                "new_events": len(events_to_process),
+            }
+            checkpoint = uow.checkpoints.create_checkpoint(
+                stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+                event_ids=processed_event_ids,
+                metadata=metadata,
+            )
+            batch_id = checkpoint.batch_id
+        else:
+            batch_id = ""
 
         logger.info(
             "embedding_pipeline_completed",
             processed=processed,
             duplicates_found=duplicates_found,
             errors=errors,
+            batch_id=batch_id,
         )
 
         return EmbeddingResponse(
             processed=processed,
             duplicates_found=duplicates_found,
             errors=errors,
+            batch_id=batch_id,
+        )
+
+
+@router.post("/run_evaluation", response_model=EvaluationResponse)
+async def run_evaluation_pipeline(
+    uow: UnitOfWork = Depends(get_uow),
+    pipeline: EvaluationPipeline = Depends(get_evaluation_pipeline),
+) -> EvaluationResponse:
+    """
+    Run evaluation pipeline for all embedded non-duplicate events.
+
+    Process:
+    1. Get all embedded non-duplicate events
+    2. Evaluate each using three scoring strategies
+    3. Store evaluation results in event.evaluation_data
+    4. Update event status to evaluated
+    5. Save checkpoint
+
+    Args:
+        uow: Unit of Work instance.
+        pipeline: Evaluation pipeline instance.
+
+    Returns:
+        Statistics about processed events.
+
+    """
+    logger.info("evaluation_pipeline_started")
+
+    with uow.begin():
+        # Get all embedded non-duplicate events
+        events = uow.events.get_non_duplicates(
+            status=EventStatus.EMBEDDED,
+            limit=settings.PIPELINE_MAX_EVENTS,
+        )
+
+        if not events:
+            logger.info("evaluation_pipeline_no_events")
+            return EvaluationResponse(processed=0, errors=0, batch_id="")
+
+        # Get already processed event IDs (from all evaluation checkpoints)
+        processed_ids = set(
+            uow.checkpoints.get_processed_event_ids(
+                CheckpointStage.EVALUATION_COMPLETED
+            )
+        )
+
+        # Filter out already processed events
+        events_to_process = [e for e in events if e.id not in processed_ids]
+
+        if not events_to_process:
+            logger.info("evaluation_pipeline_no_new_events")
+            return EvaluationResponse(processed=0, errors=0, batch_id="")
+
+        logger.info(
+            "evaluation_pipeline_events_to_process",
+            total_available=len(events),
+            already_processed=len(processed_ids),
+            new_events=len(events_to_process),
+        )
+
+        processed = 0
+        errors = 0
+        processed_event_ids = []
+
+        for event in events_to_process:
+            try:
+                result = pipeline.evaluate_event(event)
+                event.evaluation_data = result
+                event.status = EventStatus.EVALUATED
+                processed += 1
+                processed_event_ids.append(event.id)
+            except Exception as e:
+                logger.error(
+                    "evaluation_pipeline_event_failed",
+                    event_id=event.id,
+                    error=str(e),
+                )
+                errors += 1
+
+        # Create checkpoint for this batch
+        if processed_event_ids:
+            metadata = {
+                "processed": processed,
+                "errors": errors,
+                "total_available": len(events),
+                "new_events": len(events_to_process),
+            }
+            checkpoint = uow.checkpoints.create_checkpoint(
+                stage_name=CheckpointStage.EVALUATION_COMPLETED,
+                event_ids=processed_event_ids,
+                metadata=metadata,
+            )
+            batch_id = checkpoint.batch_id
+        else:
+            batch_id = ""
+
+        logger.info(
+            "evaluation_pipeline_completed",
+            processed=processed,
+            errors=errors,
+            batch_id=batch_id,
+        )
+
+        return EvaluationResponse(
+            processed=processed,
+            errors=errors,
+            batch_id=batch_id,
         )
 
 
@@ -293,6 +445,17 @@ async def get_pipeline_progress(
         percentage=progress["percentage"],
         last_completed=progress["last_completed"],
     )
+
+
+@router.get("/checkpoints", response_model=CheckpointsSummaryResponse)
+async def get_checkpoints_summary(
+    uow: UnitOfWork = Depends(get_uow),
+) -> CheckpointsSummaryResponse:
+    """Get summary of all checkpoints."""
+    with uow.begin():
+        checkpoints = uow.checkpoints.get_checkpoints_summary()
+
+    return CheckpointsSummaryResponse(checkpoints=checkpoints)
 
 
 @router.post("/reset_from_stage", response_model=ResetResponse)

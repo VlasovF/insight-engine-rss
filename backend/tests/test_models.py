@@ -106,20 +106,6 @@ class TestPipelineCheckpointModel:
         assert checkpoint.stage_name == "embedding_completed"
         assert checkpoint.completed_at is not None
 
-    def test_checkpoint_stage_name_unique(self, db_session):
-        """Test stage_name is unique."""
-        cp1 = PipelineCheckpoint(stage_name="embedding_completed")
-        cp2 = PipelineCheckpoint(stage_name="embedding_completed")
-        db_session.add(cp1)
-        db_session.commit()
-
-        import pytest
-        from sqlalchemy.exc import IntegrityError
-
-        db_session.add(cp2)
-        with pytest.raises(IntegrityError):
-            db_session.commit()
-
     def test_checkpoint_repr(self, db_session):
         """Test PipelineCheckpoint string representation."""
         checkpoint = PipelineCheckpoint(stage_name="evaluation_completed")

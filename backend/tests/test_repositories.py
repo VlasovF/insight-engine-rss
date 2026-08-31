@@ -1,6 +1,6 @@
 """Tests for repositories."""
 
-import pytest
+from uuid import uuid4
 
 from app.models import CheckpointStage, Event, PipelineCheckpoint
 
@@ -96,7 +96,6 @@ class TestEventRepository:
         assert updated is not None
         assert updated.status == "embedded"
 
-        # Verify in DB
         saved = uow.events.get_by_id(event.id)
         assert saved.status == "embedded"
 
@@ -160,16 +159,13 @@ class TestEventRepository:
         uow.events.add(event2)
         uow.commit()
 
-        # Reset to embedding
         count = uow.events.reset_from_stage("embedding")
         assert count == 2
 
-        # Check first event
         e1 = uow.events.get_by_id(event1.id)
         assert e1.status == "pending"
         assert e1.is_duplicate is False
 
-        # Check second event
         e2 = uow.events.get_by_id(event2.id)
         assert e2.status == "pending"
         assert e2.is_duplicate is False
@@ -196,108 +192,186 @@ class TestCheckpointRepository:
 
     def test_add_checkpoint(self, uow):
         """Test adding a checkpoint."""
-        checkpoint = PipelineCheckpoint(stage_name=CheckpointStage.EMBEDDING_COMPLETED)
-        uow.checkpoints.add(checkpoint)
+        event_ids = ["evt1", "evt2"]
+        checkpoint = uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=event_ids,
+        )
         uow.commit()
 
-        saved = uow.checkpoints.get_by_id(checkpoint.id)
-        assert saved is not None
-        assert saved.stage_name == CheckpointStage.EMBEDDING_COMPLETED
+        assert checkpoint.id is not None
+        assert checkpoint.stage_name == CheckpointStage.EMBEDDING_COMPLETED
+        assert checkpoint.event_count == 2
+        assert checkpoint.batch_id is not None
 
-    def test_get_by_stage(self, uow):
-        """Test getting checkpoint by stage name."""
-        checkpoint = PipelineCheckpoint(stage_name=CheckpointStage.EMBEDDING_COMPLETED)
-        uow.checkpoints.add(checkpoint)
+    def test_create_checkpoint_with_metadata(self, uow):
+        """Test creating checkpoint with metadata."""
+        event_ids = ["evt1", "evt2"]
+        metadata = {"processed": 2, "errors": 0}
+
+        checkpoint = uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=event_ids,
+            metadata=metadata,
+        )
         uow.commit()
 
-        found = uow.checkpoints.get_by_stage(CheckpointStage.EMBEDDING_COMPLETED)
-        assert found is not None
-        assert found.id == checkpoint.id
+        assert checkpoint.checkpoint_metadata == metadata
 
-        with pytest.raises(ValueError):
-            uow.checkpoints.get_by_stage("nonexistent")
-
-    def test_get_or_create_existing(self, uow):
-        """Test get_or_create with existing checkpoint."""
-        checkpoint = PipelineCheckpoint(stage_name=CheckpointStage.EMBEDDING_COMPLETED)
-        uow.checkpoints.add(checkpoint)
+    def test_get_last_checkpoint(self, uow):
+        """Test getting last checkpoint for a stage."""
+        # Create first checkpoint
+        uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=["evt1"],
+        )
         uow.commit()
 
-        result = uow.checkpoints.get_or_create(CheckpointStage.EMBEDDING_COMPLETED)
-        assert result.id == checkpoint.id
-
-    def test_get_or_create_new(self, uow):
-        """Test get_or_create with new checkpoint."""
-        result = uow.checkpoints.get_or_create(CheckpointStage.EMBEDDING_COMPLETED)
+        # Create second checkpoint
+        cp2 = uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=["evt2", "evt3"],
+        )
         uow.commit()
 
-        assert result.id is not None
-        assert result.stage_name == CheckpointStage.EMBEDDING_COMPLETED
+        last = uow.checkpoints.get_last_checkpoint(CheckpointStage.EMBEDDING_COMPLETED)
+        assert last.id == cp2.id
+        assert last.event_count == 2
 
-        # Verify in DB
-        saved = uow.checkpoints.get_by_stage(CheckpointStage.EMBEDDING_COMPLETED)
-        assert saved is not None
-
-    def test_mark_completed(self, uow):
-        """Test marking stage as completed."""
-        result = uow.checkpoints.mark_completed(CheckpointStage.EMBEDDING_COMPLETED)
+    def test_get_checkpoints(self, uow):
+        """Test getting recent checkpoints for a stage."""
+        # Create multiple checkpoints with different batch_ids
+        for i in range(3):
+            checkpoint = PipelineCheckpoint(
+                stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+                batch_id=str(uuid4()),
+                event_ids=[f"evt{i}"],
+                event_count=1,
+            )
+            uow.checkpoints.add(checkpoint)
         uow.commit()
 
-        assert result.stage_name == CheckpointStage.EMBEDDING_COMPLETED
+        checkpoints = uow.checkpoints.get_checkpoints(
+            CheckpointStage.EMBEDDING_COMPLETED, limit=2
+        )
+        assert len(checkpoints) == 2
 
-        saved = uow.checkpoints.get_by_stage(CheckpointStage.EMBEDDING_COMPLETED)
-        assert saved is not None
-
-    def test_delete_by_stage(self, uow):
-        """Test deleting checkpoint by stage."""
-        checkpoint = PipelineCheckpoint(stage_name=CheckpointStage.EMBEDDING_COMPLETED)
-        uow.checkpoints.add(checkpoint)
+    def test_get_processed_event_ids(self, uow):
+        """Test getting processed event IDs."""
+        uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=["evt1", "evt2"],
+        )
         uow.commit()
 
-        uow.checkpoints.delete_by_stage(CheckpointStage.EMBEDDING_COMPLETED)
+        uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=["evt3"],
+        )
         uow.commit()
 
-        deleted = uow.checkpoints.get_by_stage(CheckpointStage.EMBEDDING_COMPLETED)
+        processed = uow.checkpoints.get_processed_event_ids(
+            CheckpointStage.EMBEDDING_COMPLETED
+        )
+        assert set(processed) == {"evt1", "evt2", "evt3"}
+
+    def test_get_unprocessed_event_ids(self, uow):
+        """Test getting unprocessed event IDs."""
+        uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=["evt1", "evt2"],
+        )
+        uow.commit()
+
+        all_ids = ["evt1", "evt2", "evt3", "evt4"]
+        unprocessed = uow.checkpoints.get_unprocessed_event_ids(
+            CheckpointStage.EMBEDDING_COMPLETED,
+            all_ids,
+        )
+        assert set(unprocessed) == {"evt3", "evt4"}
+
+    def test_delete_checkpoint(self, uow):
+        """Test deleting a checkpoint by ID."""
+        checkpoint = uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=["evt1"],
+        )
+        uow.commit()
+
+        uow.checkpoints.delete_checkpoint(checkpoint.id)
+        uow.commit()
+
+        deleted = uow.checkpoints.get_by_id(checkpoint.id)
         assert deleted is None
 
-    def test_is_stage_completed(self, uow):
-        """Test checking if stage is completed."""
-        assert (
-            uow.checkpoints.is_stage_completed(CheckpointStage.EMBEDDING_COMPLETED)
-            is False
+    def test_delete_by_stage(self, uow):
+        """Test deleting all checkpoints for a stage."""
+        uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=["evt1"],
         )
+        uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EVALUATION_COMPLETED,
+            event_ids=["evt2"],
+        )
+        uow.commit()
 
-        uow.checkpoints.mark_completed(CheckpointStage.EMBEDDING_COMPLETED)
+        count = uow.checkpoints.delete_by_stage(CheckpointStage.EMBEDDING_COMPLETED)
+        assert count == 1
+
+        remaining = uow.checkpoints.get_checkpoints(
+            CheckpointStage.EVALUATION_COMPLETED, limit=10
+        )
+        assert len(remaining) == 1
+
+    def test_is_event_processed(self, uow):
+        """Test checking if event is processed."""
+        uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=["evt1", "evt2"],
+        )
         uow.commit()
 
         assert (
-            uow.checkpoints.is_stage_completed(CheckpointStage.EMBEDDING_COMPLETED)
+            uow.checkpoints.is_event_processed(
+                CheckpointStage.EMBEDDING_COMPLETED, "evt1"
+            )
             is True
+        )
+        assert (
+            uow.checkpoints.is_event_processed(
+                CheckpointStage.EMBEDDING_COMPLETED, "evt3"
+            )
+            is False
         )
 
     def test_get_pipeline_progress(self, uow):
         """Test getting pipeline progress."""
-        # Initially no checkpoints
         progress = uow.checkpoints.get_pipeline_progress()
         assert progress["completed_stages"] == []
         assert progress["percentage"] == 0
 
-        # Add a checkpoint
-        uow.checkpoints.mark_completed(CheckpointStage.EMBEDDING_COMPLETED)
+        uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=["evt1"],
+        )
         uow.commit()
 
         progress = uow.checkpoints.get_pipeline_progress()
         assert CheckpointStage.EMBEDDING_COMPLETED in progress["completed_stages"]
-        assert progress["percentage"] == 33  # 1 of 3 stages
+        assert progress["percentage"] == 33
 
-    def test_get_completed_checkpoints(self, uow):
-        """Test getting all completed checkpoints."""
-        uow.checkpoints.mark_completed(
-            CheckpointStage.EMBEDDING_COMPLETED, metadata={"processed": 10}
+    def test_get_checkpoints_summary(self, uow):
+        """Test getting checkpoints summary."""
+        uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=["evt1", "evt2"],
+            metadata={"processed": 2},
         )
         uow.commit()
 
-        checkpoints = uow.checkpoints.get_completed_checkpoints()
-        assert len(checkpoints) == 1
-        assert checkpoints[0]["stage_name"] == CheckpointStage.EMBEDDING_COMPLETED
-        assert checkpoints[0]["metadata"]["processed"] == 10
+        summary = uow.checkpoints.get_checkpoints_summary()
+        assert len(summary) == 1
+        assert summary[0]["stage_name"] == CheckpointStage.EMBEDDING_COMPLETED
+        assert summary[0]["event_count"] == 2
+        assert summary[0]["metadata"]["processed"] == 2

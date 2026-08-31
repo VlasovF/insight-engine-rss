@@ -2,7 +2,7 @@
 
 import pytest
 
-from app.models import Event
+from app.models import CheckpointStage, Event
 from app.uow import UnitOfWork
 
 
@@ -24,7 +24,6 @@ class TestUnitOfWork:
         uow.events.add(event)
         uow.commit()
 
-        # Verify event is saved
         saved = uow.events.get_by_id(event.id)
         assert saved is not None
 
@@ -49,7 +48,6 @@ class TestUnitOfWork:
         except ValueError:
             pass
 
-        # Verify event was not saved
         with db_session.begin():
             count = db_session.query(Event).count()
             assert count == 0
@@ -71,7 +69,6 @@ class TestUnitOfWork:
             )
             transaction.events.add(event)
 
-        # Verify event is saved
         with db_session.begin():
             count = db_session.query(Event).count()
             assert count == 1
@@ -91,8 +88,9 @@ class TestUnitOfWork:
     def test_uow_checkpoints_repository(self, uow):
         """Test checkpoints repository is accessible."""
         assert uow.checkpoints is not None
-        assert hasattr(uow.checkpoints, "add")
-        assert hasattr(uow.checkpoints, "get_by_stage")
+        assert hasattr(uow.checkpoints, "create_checkpoint")
+        assert hasattr(uow.checkpoints, "get_last_checkpoint")
+        assert hasattr(uow.checkpoints, "get_checkpoints")
 
     def test_uow_multiple_operations(self, uow):
         """Test multiple operations in one transaction."""
@@ -104,3 +102,16 @@ class TestUnitOfWork:
 
         all_events = uow.events.get_all()
         assert len(all_events) == 2
+
+    def test_uow_checkpoint_operations(self, uow):
+        """Test checkpoint operations in transaction."""
+        checkpoint = uow.checkpoints.create_checkpoint(
+            stage_name=CheckpointStage.EMBEDDING_COMPLETED,
+            event_ids=["evt1", "evt2"],
+        )
+        uow.commit()
+
+        saved = uow.checkpoints.get_by_id(checkpoint.id)
+        assert saved is not None
+        assert saved.stage_name == CheckpointStage.EMBEDDING_COMPLETED
+        assert saved.event_count == 2
