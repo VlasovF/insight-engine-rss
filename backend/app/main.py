@@ -12,6 +12,7 @@ from .api import (
     embedding_router,
     events_router,
     feeds_router,
+    insights_router,
     pipeline_router,
     vector_router,
 )
@@ -104,6 +105,7 @@ app.include_router(events_router)
 app.include_router(vector_router)
 app.include_router(embedding_router)
 app.include_router(pipeline_router)
+app.include_router(insights_router)
 
 
 @app.get("/health")
