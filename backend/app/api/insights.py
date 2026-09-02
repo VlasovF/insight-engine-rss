@@ -42,19 +42,7 @@ def get_insight_generator() -> InsightGenerator:
 
 
 def _extract_event_data(event) -> Dict[str, Any]:
-    """
-    Extract event data and scores without accessing
-    lazy-loaded attributes.
-
-    Args:
-        event: Event object (may be detached).
-
-    Returns:
-        Dictionary with event data and scores.
-
-    """  # noqa D205
-    # Access only attributes that are already loaded
-    # Use getattr with defaults for safety
+    """Extract event data without accessing lazy-loaded attributes."""
     return {
         "id": getattr(event, "id", ""),
         "title": getattr(event, "title", ""),
@@ -64,7 +52,6 @@ def _extract_event_data(event) -> Dict[str, Any]:
         "status": getattr(event, "status", ""),
         "is_duplicate": getattr(event, "is_duplicate", False),
         "content_hash": getattr(event, "content_hash", ""),
-        # Use evaluation_data directly if available, with safe access
         "evaluation_data": getattr(event, "evaluation_data", None),
         "created_at": getattr(event, "created_at", None),
         "updated_at": getattr(event, "updated_at", None),
@@ -85,23 +72,28 @@ def _get_event_scores_from_data(event_data: Dict[str, Any]) -> Dict[str, float]:
     return scores
 
 
+def _insight_to_response(insight: Insight) -> InsightResponse:
+    """
+    Convert Insight ORM object to response model.
+
+    All data is extracted while the object is still bound to a session.
+    """
+    return InsightResponse(
+        id=insight.id,
+        content=insight.content,
+        event_ids=insight.event_ids,
+        event_count=insight.event_count,
+        stages=insight.stages,
+        created_at=insight.created_at.isoformat(),
+    )
+
+
 async def _stream_insight_generation(
     event_data_list: List[Dict[str, Any]],
     generator: InsightGenerator,
     uow: UnitOfWork,
 ) -> AsyncGenerator[str, None]:
-    """
-    Stream insight generation stages via SSE.
-
-    Args:
-        event_data_list: List of event data dictionaries.
-        generator: InsightGenerator instance.
-        uow: Unit of Work for saving results.
-
-    Yields:
-        SSE formatted messages for each stage.
-
-    """
+    """Stream insight generation stages via SSE."""
     if not event_data_list:
         yield f"data: {
             json.dumps(
@@ -202,7 +194,7 @@ async def _stream_insight_generation(
         }\n\n"
         return
 
-    # Save insight to database
+    # Save insight to database - create insight INSIDE the session
     try:
         event_ids = [ed["id"] for ed in event_data_list if ed.get("id")]
         stages = {
@@ -211,16 +203,19 @@ async def _stream_insight_generation(
             "synthesis": synthesis_response,
         }
 
-        insight = Insight(
-            content=synthesis_response,
-            event_ids=event_ids,
-            event_count=len(event_ids),
-            stages=stages,
-        )
+        # Use a separate session for saving to avoid detached instance issues
+        with uow.begin() as save_uow:
+            # Create insight within the session
+            insight = Insight(
+                content=synthesis_response,
+                event_ids=event_ids,
+                event_count=len(event_ids),
+                stages=stages,
+            )
+            save_uow.insights.add(insight)
 
-        with uow.begin():
-            uow.insights.add(insight)
-            uow.checkpoints.create_checkpoint(
+            # Create checkpoint
+            save_uow.checkpoints.create_checkpoint(
                 stage_name=CheckpointStage.INSIGHT_GENERATED,
                 event_ids=event_ids,
                 metadata={
@@ -229,12 +224,19 @@ async def _stream_insight_generation(
                 },
             )
 
+            # Extract data while still in session
+            insight_id = insight.id
+            insight_content = insight.content
+            # insight_event_ids = insight.event_ids
+            # insight_event_count = insight.event_count
+            # insight_stages = insight.stages
+
         yield f"data: {
             json.dumps(
                 {
                     'stage': 'done',
-                    'insight_id': insight.id,
-                    'content': synthesis_response,
+                    'insight_id': insight_id,
+                    'content': insight_content,
                     'status': 'complete',
                 }
             )
@@ -252,18 +254,10 @@ async def stream_insight(
     uow: UnitOfWork = Depends(get_uow),
     generator: InsightGenerator = Depends(get_insight_generator),
 ) -> StreamingResponse:
-    """
-    Stream insight generation via Server-Sent Events (SSE).
-
-    Returns:
-        SSE stream with analyst, skeptic, and synthesis stages.
-
-    """
+    """Stream insight generation via Server-Sent Events (SSE)."""
     logger.info("insight_stream_requested")
 
-    # Collect all event data while session is active
     with uow.begin():
-        # Get evaluated non-duplicate events
         events = uow.events.get_non_duplicates(
             status=EventStatus.EVALUATED,
             limit=100,
@@ -275,18 +269,14 @@ async def stream_insight(
                 detail="No evaluated events found. Run evaluation first.",
             )
 
-        # Extract all data from events while session is active
         event_data_list = []
         for event in events:
             event_data = _extract_event_data(event)
             scores = _get_event_scores_from_data(event_data)
 
-            # Add scores to event data
             event_data["urgency"] = scores["urgency"]
             event_data["conflict"] = scores["conflict"]
             event_data["surprise"] = scores["surprise"]
-
-            # Calculate composite score
             event_data["composite"] = (
                 scores["conflict"] + scores["urgency"] + (scores["surprise"] * 0.5)
             )
@@ -299,7 +289,6 @@ async def stream_insight(
                 detail="No evaluable events found.",
             )
 
-        # Sort by composite score descending and select top K
         event_data_list.sort(key=lambda x: x.get("composite", 0), reverse=True)
         top_events = event_data_list[: settings.INSIGHT_TOP_K]
 
@@ -315,7 +304,6 @@ async def stream_insight(
             top_scores=[f"{e.get('composite', 0):.2f}" for e in top_events],
         )
 
-    # Generate insight using the extracted data (no session dependency)
     return StreamingResponse(
         _stream_insight_generation(top_events, generator, uow),
         media_type="text/event-stream",
@@ -333,35 +321,17 @@ async def get_insights(
     offset: int = 0,
     uow: UnitOfWork = Depends(get_uow),
 ) -> InsightsListResponse:
-    """
-    Get list of generated insights.
-
-    Args:
-        limit: Maximum number of insights.
-        offset: Number of insights to skip.
-        uow: Unit of Work instance.
-
-    Returns:
-        List of insights.
-
-    """
+    """Get list of generated insights."""
     with uow.begin():
         insights = uow.insights.get_latest(limit=limit + offset)
+        # Extract all data while session is active
+        items = [_insight_to_response(i) for i in insights]
 
-    items = insights[offset : offset + limit]
+    # Apply offset manually
+    items = items[offset : offset + limit]
 
     return InsightsListResponse(
-        items=[
-            InsightResponse(
-                id=i.id,
-                content=i.content,
-                event_ids=i.event_ids,
-                event_count=i.event_count,
-                stages=i.stages,
-                created_at=i.created_at.isoformat(),
-            )
-            for i in items
-        ],
+        items=items,
         total=len(insights),
     )
 
@@ -371,31 +341,18 @@ async def get_insight(
     insight_id: str,
     uow: UnitOfWork = Depends(get_uow),
 ) -> InsightResponse:
-    """
-    Get a specific insight by ID.
-
-    Args:
-        insight_id: Insight ID.
-        uow: Unit of Work instance.
-
-    Returns:
-        Insight data.
-
-    """
+    """Get a specific insight by ID."""
     with uow.begin():
         insight = uow.insights.get_by_id(insight_id)
+        if not insight:
+            raise HTTPException(
+                status_code=404, detail=f"Insight {insight_id} not found"
+            )
 
-    if not insight:
-        raise HTTPException(status_code=404, detail=f"Insight {insight_id} not found")
+        # Extract data while session is active
+        response = _insight_to_response(insight)
 
-    return InsightResponse(
-        id=insight.id,
-        content=insight.content,
-        event_ids=insight.event_ids,
-        event_count=insight.event_count,
-        stages=insight.stages,
-        created_at=insight.created_at.isoformat(),
-    )
+    return response
 
 
 @router.delete("/{insight_id}")
@@ -403,17 +360,7 @@ async def delete_insight(
     insight_id: str,
     uow: UnitOfWork = Depends(get_uow),
 ) -> dict:
-    """
-    Delete an insight by ID.
-
-    Args:
-        insight_id: Insight ID.
-        uow: Unit of Work instance.
-
-    Returns:
-        Deletion status.
-
-    """
+    """Delete an insight by ID."""
     with uow.begin():
         insight = uow.insights.get_by_id(insight_id)
 

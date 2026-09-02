@@ -24,6 +24,7 @@ class UnitOfWork:
         self._session = self._session_factory()
         self._events = EventRepository(self._session)
         self._checkpoints = CheckpointRepository(self._session)
+        self._insights = InsightRepository(self._session)
         return self
 
     def __exit__(
