@@ -1,0 +1,229 @@
+.panel {
+  background-color: #16213e;
+  border-radius: 12px;
+  padding: 1.5rem;
+  border: 1px solid #2a3a5e;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.title {
+  color: #e0e0e0;
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.generateButton {
+  background-color: #2a4a5a;
+  border: none;
+  border-radius: 8px;
+  color: #e0e0e0;
+  padding: 0.6rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.generateButton:hover:not(:disabled) {
+  background-color: #3a5a6a;
+}
+
+.generateButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Error and Success */
+.error {
+  background-color: #3a1a1a;
+  border: 1px solid #5a2a2a;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  color: #d46a4a;
+  margin-bottom: 1rem;
+}
+
+.success {
+  background-color: #1a3a2a;
+  border: 1px solid #2a5a3a;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  color: #4ad86a;
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.insightId {
+  font-size: 0.8rem;
+  color: #6a9b7a;
+  font-family: monospace;
+}
+
+/* Placeholder */
+.placeholder {
+  text-align: center;
+  padding: 3rem 0;
+  color: #8a9bb5;
+}
+
+.placeholder .hint {
+  font-size: 0.9rem;
+  color: #5a6b85;
+  margin-top: 0.5rem;
+}
+
+/* Stages Grid */
+.stagesGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.stageCard {
+  background-color: #0d1b2a;
+  border-radius: 8px;
+  padding: 1rem;
+  border: 1px solid #1a2a3a;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+  max-height: 400px;
+}
+
+.stageCard.active {
+  border-color: #4ad8c8;
+  box-shadow: 0 0 20px rgba(74, 216, 200, 0.1);
+}
+
+.stageCard.done {
+  border-color: #2a4a3a;
+}
+
+/* Stage colors */
+.stageAnalyst {
+  border-top: 3px solid #4a8ab5;
+}
+
+.stageSkeptic {
+  border-top: 3px solid #b58a4a;
+}
+
+.stageSynthesis {
+  border-top: 3px solid #4ab58a;
+}
+
+.stageHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.stageIcon {
+  font-size: 1.2rem;
+}
+
+.stageLabel {
+  color: #e0e0e0;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.statusBadge {
+  font-size: 0.7rem;
+  color: #8a9bb5;
+  background-color: #1a2a3a;
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  margin-left: auto;
+}
+
+.stageContent {
+  flex: 1;
+  overflow-y: auto;
+  color: #c0c0d0;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-right: 0.25rem;
+}
+
+.stageContent::-webkit-scrollbar {
+  width: 4px;
+}
+
+.stageContent::-webkit-scrollbar-track {
+  background: #0a1520;
+}
+
+.stageContent::-webkit-scrollbar-thumb {
+  background: #2a3a5e;
+  border-radius: 2px;
+}
+
+.placeholderText {
+  color: #5a6b85;
+  font-style: italic;
+}
+
+/* Actions */
+.actions {
+  margin-top: 1.5rem;
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+}
+
+.downloadButton {
+  background-color: #2a3a5e;
+  border: none;
+  border-radius: 8px;
+  color: #e0e0e0;
+  padding: 0.6rem 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.downloadButton:hover {
+  background-color: #3a4a6e;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .stagesGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .stageCard {
+    min-height: 200px;
+    max-height: 300px;
+  }
+
+  .header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .generateButton {
+    width: 100%;
+  }
+}
