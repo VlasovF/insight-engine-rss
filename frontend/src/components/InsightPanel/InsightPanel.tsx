@@ -1,5 +1,17 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useEffect, useRef, useCallback } from "react";
 import styles from "./InsightPanel.module.css";
+
+interface SavedInsight {
+  id: string;
+  content: string;
+  event_count: number;
+  created_at: string;
+  stages?: {
+    analyst: string;
+    skeptic: string;
+    synthesis: string;
+  } | null;
+}
 
 interface InsightPanelProps {
   stages: Record<string, string>;
@@ -10,6 +22,10 @@ interface InsightPanelProps {
   insightId: string | null;
   onGenerate: () => void;
   isGenerating: boolean;
+  savedInsights: SavedInsight[];
+  isLoadingHistory: boolean;
+  onLoadInsight: (id: string) => Promise<void>;
+  onDeleteInsight?: (id: string) => Promise<void>;
 }
 
 const stageLabels: Record<string, string> = {
@@ -39,20 +55,16 @@ const InsightPanel: React.FC<InsightPanelProps> = ({
   insightId,
   onGenerate,
   isGenerating,
+  savedInsights,
+  isLoadingHistory,
+  onLoadInsight,
+  onDeleteInsight,
 }) => {
   const contentRefs = useRef<Record<string, HTMLDivElement | null>>({
     analyst: null,
     skeptic: null,
     synthesis: null,
   });
-  const [displayedStages, setDisplayedStages] = useState<
-    Record<string, string>
-  >({
-    analyst: "",
-    skeptic: "",
-    synthesis: "",
-  });
-  const typewriterTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Create refs using useCallback
   const setContentRef = useCallback(
@@ -62,59 +74,7 @@ const InsightPanel: React.FC<InsightPanelProps> = ({
     [],
   );
 
-  // Typewriter effect - only runs when stages content changes
-  useEffect(() => {
-    const stageKeys = ["analyst", "skeptic", "synthesis"] as const;
-
-    // Clear existing timer
-    if (typewriterTimerRef.current) {
-      clearTimeout(typewriterTimerRef.current);
-      typewriterTimerRef.current = null;
-    }
-
-    let updatedKey: string | null = null;
-    let newChar: string | null = null;
-
-    for (const key of stageKeys) {
-      const targetText = stages[key] || "";
-      const currentDisplay = displayedStages[key] || "";
-
-      // If target is shorter than current (reset case), update immediately via setTimeout
-      if (targetText.length < currentDisplay.length) {
-        setTimeout(() => {
-          setDisplayedStages((prev) => ({
-            ...prev,
-            [key]: targetText,
-          }));
-        }, 0);
-      } else if (targetText.length > currentDisplay.length) {
-        // Type out one character at a time with delay
-        updatedKey = key;
-        newChar = targetText[currentDisplay.length];
-        break; // Only type one character at a time
-      }
-    }
-
-    // If we have a character to type, schedule it
-    if (updatedKey && newChar !== null) {
-      typewriterTimerRef.current = setTimeout(() => {
-        setDisplayedStages((prev) => ({
-          ...prev,
-          [updatedKey]: prev[updatedKey] + newChar,
-        }));
-      }, 10); // 10ms per character for fast typing
-    }
-
-    // Cleanup timer on unmount or when effect re-runs
-    return () => {
-      if (typewriterTimerRef.current) {
-        clearTimeout(typewriterTimerRef.current);
-        typewriterTimerRef.current = null;
-      }
-    };
-  }, [stages, displayedStages]);
-
-  // Auto-scroll to bottom when content updates
+  // Scroll to bottom when content updates
   useEffect(() => {
     const stageKeys = ["analyst", "skeptic", "synthesis"] as const;
     stageKeys.forEach((key) => {
@@ -123,16 +83,31 @@ const InsightPanel: React.FC<InsightPanelProps> = ({
         ref.scrollTop = ref.scrollHeight;
       }
     });
-  }, [displayedStages]);
+  }, [stages]);
 
-  const handleGenerate = () => {
-    setDisplayedStages({ analyst: "", skeptic: "", synthesis: "" });
-    onGenerate();
+  const handleLoadInsight = async (id: string) => {
+    await onLoadInsight(id);
   };
 
-  const isAnyStageActive = Object.values(stages).some(
+  const handleDeleteInsight = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (window.confirm("Delete this insight?")) {
+      await onDeleteInsight?.(id);
+    }
+  };
+
+  const formatDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleString();
+  };
+
+  const hasContent = Object.values(stages).some(
     (content) => content.length > 0,
   );
+
+  // Get current insight stages or use empty
+  const displayStages = hasContent
+    ? stages
+    : { analyst: "", skeptic: "", synthesis: "" };
 
   return (
     <div className={styles.panel}>
@@ -140,11 +115,56 @@ const InsightPanel: React.FC<InsightPanelProps> = ({
         <h3 className={styles.title}>💡 Dialectical Insight</h3>
         <button
           className={styles.generateButton}
-          onClick={handleGenerate}
+          onClick={onGenerate}
           disabled={isGenerating}
         >
           {isGenerating ? "⏳ Generating..." : "🚀 Generate Insight"}
         </button>
+      </div>
+
+      {/* History sidebar */}
+      <div className={styles.historySection}>
+        <div className={styles.historyHeader}>
+          <span className={styles.historyTitle}>📚 History</span>
+          <span className={styles.historyCount}>
+            {savedInsights.length}{" "}
+            {savedInsights.length === 1 ? "insight" : "insights"}
+          </span>
+          {isLoadingHistory && <span className={styles.loadingBadge}>⏳</span>}
+        </div>
+        <div className={styles.historyList}>
+          {savedInsights.length === 0 && !isLoadingHistory && (
+            <p className={styles.historyEmpty}>No insights generated yet</p>
+          )}
+          {savedInsights.map((insight) => (
+            <div
+              key={insight.id}
+              className={`${styles.historyItem} ${insight.id === insightId ? styles.activeHistory : ""}`}
+              onClick={() => handleLoadInsight(insight.id)}
+            >
+              <div className={styles.historyItemHeader}>
+                <span className={styles.historyDate}>
+                  {formatDate(insight.created_at)}
+                </span>
+                <span className={styles.historyBadge}>
+                  {insight.event_count} events
+                </span>
+                {onDeleteInsight && (
+                  <button
+                    className={styles.deleteButton}
+                    onClick={(e) => handleDeleteInsight(insight.id, e)}
+                    title="Delete insight"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <div className={styles.historyPreview}>
+                {insight.content.slice(0, 120)}...
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
 
       {isError && (
@@ -153,18 +173,14 @@ const InsightPanel: React.FC<InsightPanelProps> = ({
         </div>
       )}
 
-      {isComplete && (
+      {isComplete && insightId && (
         <div className={styles.success}>
           ✅ Insight generated successfully!
-          {insightId && (
-            <span className={styles.insightId}>
-              ID: {insightId.slice(0, 8)}
-            </span>
-          )}
+          <span className={styles.insightId}>ID: {insightId.slice(0, 8)}</span>
         </div>
       )}
 
-      {!isAnyStageActive && !isGenerating && !isError && !isComplete && (
+      {!hasContent && !isGenerating && !isError && !isComplete && (
         <div className={styles.placeholder}>
           <p>Click "Generate Insight" to create a dialectical synthesis</p>
           <p className={styles.hint}>Requires at least 2 evaluated events</p>
@@ -173,8 +189,8 @@ const InsightPanel: React.FC<InsightPanelProps> = ({
 
       <div className={styles.stagesGrid}>
         {["analyst", "skeptic", "synthesis"].map((key) => {
-          const content = displayedStages[key] || "";
-          const isActive = activeStage === key;
+          const content = displayStages[key] || "";
+          const isActive = activeStage === key && isGenerating;
           const isDone = isComplete || (content.length > 0 && !isActive);
 
           return (
@@ -208,7 +224,11 @@ const InsightPanel: React.FC<InsightPanelProps> = ({
 
       {isComplete && (
         <div className={styles.actions}>
-          <button className={styles.downloadButton} onClick={handleGenerate}>
+          <button
+            className={styles.downloadButton}
+            onClick={onGenerate}
+            disabled={isGenerating}
+          >
             🔄 Regenerate
           </button>
         </div>

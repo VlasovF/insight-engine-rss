@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useCallback } from "react";
 import InsightPanel from "../../components/InsightPanel/InsightPanel";
 import { useSSE } from "../../hooks/useSSE";
 import styles from "./Insights.module.css";
@@ -13,6 +13,11 @@ const Insights: React.FC = () => {
     insightId,
     startStream,
     reset,
+    savedInsights,
+    isLoadingHistory,
+    loadInsight,
+    displaySavedInsight,
+    loadHistory,
   } = useSSE();
 
   const isGenerating =
@@ -20,7 +25,38 @@ const Insights: React.FC = () => {
     !isComplete &&
     !isError;
 
-  // Reset state when component unmounts
+  const handleLoadInsight = async (id: string) => {
+    const insight = await loadInsight(id);
+    if (insight) {
+      displaySavedInsight(insight);
+    }
+  };
+
+  const handleDeleteInsight = useCallback(
+    async (id: string) => {
+      try {
+        const response = await fetch(
+          `http://localhost:8000/api/insights/${id}`,
+          {
+            method: "DELETE",
+          },
+        );
+        if (!response.ok) {
+          throw new Error("Failed to delete insight");
+        }
+        // Refresh history
+        await loadHistory();
+        // If the deleted insight was currently displayed, reset view
+        if (insightId === id) {
+          reset();
+        }
+      } catch (err) {
+        console.error("Failed to delete insight:", err);
+      }
+    },
+    [insightId, loadHistory, reset],
+  );
+
   useEffect(() => {
     return () => {
       reset();
@@ -38,6 +74,10 @@ const Insights: React.FC = () => {
         insightId={insightId}
         onGenerate={startStream}
         isGenerating={isGenerating}
+        savedInsights={savedInsights}
+        isLoadingHistory={isLoadingHistory}
+        onLoadInsight={handleLoadInsight}
+        onDeleteInsight={handleDeleteInsight}
       />
     </div>
   );

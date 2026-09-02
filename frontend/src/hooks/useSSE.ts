@@ -8,6 +8,19 @@ export interface SSEStage {
   insight_id?: string;
 }
 
+export interface SavedInsight {
+  id: string;
+  content: string;
+  event_ids: string[] | null;
+  event_count: number;
+  stages: {
+    analyst: string;
+    skeptic: string;
+    synthesis: string;
+  } | null;
+  created_at: string;
+}
+
 interface UseSSEResult {
   stages: Record<string, string>;
   isComplete: boolean;
@@ -17,6 +30,11 @@ interface UseSSEResult {
   startStream: () => void;
   reset: () => void;
   activeStage: string | null;
+  savedInsights: SavedInsight[];
+  isLoadingHistory: boolean;
+  loadHistory: () => Promise<void>;
+  loadInsight: (id: string) => Promise<SavedInsight | null>;
+  displaySavedInsight: (insight: SavedInsight) => void;
 }
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
@@ -32,8 +50,11 @@ export function useSSE(): UseSSEResult {
   const [error, setError] = useState<string | null>(null);
   const [insightId, setInsightId] = useState<string | null>(null);
   const [activeStage, setActiveStage] = useState<string | null>(null);
+  const [savedInsights, setSavedInsights] = useState<SavedInsight[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState<boolean>(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  const isMountedRef = useRef<boolean>(true);
 
   const reset = useCallback(() => {
     if (eventSourceRef.current) {
@@ -48,8 +69,72 @@ export function useSSE(): UseSSEResult {
     setActiveStage(null);
   }, []);
 
+  const loadHistory = useCallback(async () => {
+    if (!isMountedRef.current) return;
+    setIsLoadingHistory(true);
+    try {
+      const response = await fetch(`${API_URL}/api/insights/?limit=20`);
+      if (!response.ok) {
+        throw new Error(`Failed to load insights: ${response.status}`);
+      }
+      const data = await response.json();
+      if (isMountedRef.current) {
+        setSavedInsights(data.items || []);
+      }
+    } catch (err) {
+      if (isMountedRef.current) {
+        setError(
+          err instanceof Error ? err.message : "Failed to load insight history",
+        );
+        setIsError(true);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsLoadingHistory(false);
+      }
+    }
+  }, []);
+
+  const loadInsight = useCallback(
+    async (id: string): Promise<SavedInsight | null> => {
+      try {
+        const response = await fetch(`${API_URL}/api/insights/${id}`);
+        if (!response.ok) {
+          throw new Error(`Failed to load insight: ${response.status}`);
+        }
+        return await response.json();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load insight");
+        setIsError(true);
+        return null;
+      }
+    },
+    [],
+  );
+
+  const displaySavedInsight = useCallback(
+    (insight: SavedInsight) => {
+      reset();
+      if (insight.stages) {
+        setStages({
+          analyst: insight.stages.analyst || "",
+          skeptic: insight.stages.skeptic || "",
+          synthesis: insight.stages.synthesis || "",
+        });
+      } else {
+        setStages({
+          analyst: "",
+          skeptic: "",
+          synthesis: insight.content || "",
+        });
+      }
+      setIsComplete(true);
+      setInsightId(insight.id);
+    },
+    [reset],
+  );
+
   const startStream = useCallback(() => {
-    // Reset state before starting
     reset();
 
     try {
@@ -72,12 +157,13 @@ export function useSSE(): UseSSEResult {
             setIsComplete(true);
             if (data.insight_id) {
               setInsightId(data.insight_id);
+              // Refresh history after new insight
+              loadHistory();
             }
             eventSource.close();
             return;
           }
 
-          // Update stage content
           setActiveStage(data.stage);
           setStages((prev) => ({
             ...prev,
@@ -99,11 +185,21 @@ export function useSSE(): UseSSEResult {
       setError("Failed to connect to SSE stream");
       setIsError(true);
     }
-  }, [reset]);
+  }, [reset, loadHistory]);
+
+  // Load history on mount - using a separate effect with no setState in body
+  useEffect(() => {
+    const loadHistoryOnMount = async () => {
+      await loadHistory();
+    };
+    loadHistoryOnMount();
+  }, [loadHistory]);
 
   // Cleanup on unmount
   useEffect(() => {
+    isMountedRef.current = true;
     return () => {
+      isMountedRef.current = false;
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }
@@ -119,5 +215,10 @@ export function useSSE(): UseSSEResult {
     startStream,
     reset,
     activeStage,
+    savedInsights,
+    isLoadingHistory,
+    loadHistory,
+    loadInsight,
+    displaySavedInsight,
   };
 }
